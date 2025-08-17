@@ -1,10 +1,13 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
+import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -12,123 +15,96 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { Search, Plus, Edit, Trash2, Phone, Mail, ArrowLeft } from "lucide-react"
-import Link from "next/link"
-import { MobileNav } from "@/components/mobile-nav"
+} from "@/components/ui/dialog";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Search, Plus, Edit, Trash2, Phone, Mail, ArrowLeft } from "lucide-react";
+import Link from "next/link";
+import { MobileNav } from "@/components/mobile-nav";
+import { useGuests } from "@/hooks/use-guests";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import guestService from "@/service/guest.service";
+import { formatYYYYMMDDHHmmssToReadable } from "@/utils/DateFormat";
 
 interface Guest {
-  guest_id: string
-  first_name: string
-  last_name: string
-  email: string
-  phone: string
-  id_card_number: string
-  total_bookings: number
-  last_visit: string
+  guest_id: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  id_document_number: string;
+  total_bookings: number;
+  updated_at: string;
 }
 
-// Mock data for demonstration
-const mockGuests: Guest[] = [
-  {
-    guest_id: "G001",
-    first_name: "John",
-    last_name: "Smith",
-    email: "john.smith@email.com",
-    phone: "+1-555-0123",
-    id_card_number: "ID123456789",
-    total_bookings: 3,
-    last_visit: "2024-01-15",
-  },
-  {
-    guest_id: "G002",
-    first_name: "Sarah",
-    last_name: "Johnson",
-    email: "sarah.j@email.com",
-    phone: "+1-555-0456",
-    id_card_number: "ID987654321",
-    total_bookings: 1,
-    last_visit: "2024-01-20",
-  },
-  {
-    guest_id: "G003",
-    first_name: "Michael",
-    last_name: "Brown",
-    email: "m.brown@email.com",
-    phone: "+1-555-0789",
-    id_card_number: "ID456789123",
-    total_bookings: 5,
-    last_visit: "2024-01-18",
-  },
-]
+// Validation schema
+const guestSchema = z.object({
+  first_name: z.string().min(1, "First name is required"),
+  last_name: z.string().min(1, "Last name is required"),
+  email: z.string().email("Invalid email"),
+  phone: z.string().min(5, "Phone is required"),
+  id_document_number: z.string().min(5, "ID Card is required"),
+});
+
+type GuestFormValues = z.infer<typeof guestSchema>;
 
 export default function GuestsPage() {
-  const [guests, setGuests] = useState<Guest[]>(mockGuests)
-  const [searchTerm, setSearchTerm] = useState("")
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
-  const [editingGuest, setEditingGuest] = useState<Guest | null>(null)
-  const [formData, setFormData] = useState({
-    first_name: "",
-    last_name: "",
-    email: "",
-    phone: "",
-    id_card_number: "",
-  })
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
+  const [isClient, setIsClient] = useState(false);
 
-  const filteredGuests = guests.filter(
-    (guest) =>
-      `${guest.first_name} ${guest.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      guest.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      guest.phone.includes(searchTerm),
-  )
+  const form = useForm<GuestFormValues>({
+    resolver: zodResolver(guestSchema),
+    defaultValues: {
+      first_name: "",
+      last_name: "",
+      email: "",
+      phone: "",
+      id_document_number: "",
+    },
+  });
 
-  const handleAddGuest = () => {
-    const newGuest: Guest = {
-      guest_id: `G${String(guests.length + 1).padStart(3, "0")}`,
-      ...formData,
-      total_bookings: 0,
-      last_visit: "Never",
-    }
-    setGuests([...guests, newGuest])
-    setFormData({ first_name: "", last_name: "", email: "", phone: "", id_card_number: "" })
-    setIsAddDialogOpen(false)
-  }
+  const queryClient = useQueryClient();
+  const { data: guestsData, isLoading } = useGuests();
+  const guests = guestsData?.guests ?? [];
 
-  const handleEditGuest = (guest: Guest) => {
-    setEditingGuest(guest)
-    setFormData({
-      first_name: guest.first_name,
-      last_name: guest.last_name,
-      email: guest.email,
-      phone: guest.phone,
-      id_card_number: guest.id_card_number,
-    })
-  }
+  // Mark component as client-rendered
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
-  const handleUpdateGuest = () => {
-    if (editingGuest) {
-      setGuests(guests.map((guest) => (guest.guest_id === editingGuest.guest_id ? { ...guest, ...formData } : guest)))
-      setEditingGuest(null)
-      setFormData({ first_name: "", last_name: "", email: "", phone: "", id_card_number: "" })
-    }
-  }
+  const createGuestMutation = useMutation({
+    mutationFn: guestService.createGuest,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["guests"] });
+      form.reset();
+      setIsAddDialogOpen(false);
+    },
+    onError: (error: any) => {
+      console.error("Failed to create guest:", error.message);
+    },
+  });
 
-  const handleDeleteGuest = (guestId: string) => {
-    setGuests(guests.filter((guest) => guest.guest_id !== guestId))
+  const handleAddGuest = (data: GuestFormValues) => {
+    createGuestMutation.mutate(data);
+  };
+
+  if (!isClient || isLoading) {
+    // ✅ Only render this during SSR / initial load
+    return <div>Loading guests...</div>;
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <MobileNav />
-
       <header className="bg-white shadow-sm border-b sticky top-0 z-40">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-4 gap-4">
             <div className="flex items-center space-x-4">
-              <Link href="/" className="sm:hidden">
+              <Link href="/">
                 <Button variant="ghost" size="sm">
-                  <ArrowLeft className="h-4 w-4" />
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Dashboard
                 </Button>
               </Link>
               <div>
@@ -136,6 +112,8 @@ export default function GuestsPage() {
                 <p className="text-sm text-gray-600 hidden sm:block">Manage all guest information</p>
               </div>
             </div>
+
+            {/* Add Guest Dialog */}
             <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
               <DialogTrigger asChild>
                 <Button className="w-full sm:w-auto">
@@ -148,60 +126,67 @@ export default function GuestsPage() {
                   <DialogTitle>Add New Guest</DialogTitle>
                   <DialogDescription>Enter the guest's information below.</DialogDescription>
                 </DialogHeader>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="first_name">First Name</Label>
-                      <Input
-                        id="first_name"
-                        value={formData.first_name}
-                        onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                      />
+                <Form {...form}>
+                  <form onSubmit={form.handleSubmit(handleAddGuest)} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField control={form.control} name="first_name" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>First Name</FormLabel>
+                          <FormControl>
+                            <Input {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="last_name" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Last Name</FormLabel>
+                          <FormControl>
+                            <Input {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
                     </div>
-                    <div>
-                      <Label htmlFor="last_name">Last Name</Label>
-                      <Input
-                        id="last_name"
-                        value={formData.last_name}
-                        onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Label htmlFor="email">Email</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="phone">Phone</Label>
-                    <Input
-                      id="phone"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="id_card_number">ID Card Number</Label>
-                    <Input
-                      id="id_card_number"
-                      value={formData.id_card_number}
-                      onChange={(e) => setFormData({ ...formData, id_card_number: e.target.value })}
-                    />
-                  </div>
-                  <Button onClick={handleAddGuest} className="w-full">
-                    Add Guest
-                  </Button>
-                </div>
+                    <FormField control={form.control} name="email" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email</FormLabel>
+                        <FormControl>
+                          <Input type="email" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="phone" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Phone</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="id_document_number" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>ID Card Number</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <Button type="submit" className="w-full" disabled={createGuestMutation.isPending}>
+                      {createGuestMutation.isPending ? "Adding..." : "Add Guest"}
+                    </Button>
+                  </form>
+                </Form>
               </DialogContent>
             </Dialog>
           </div>
         </div>
       </header>
 
+      {/* Guest List */}
       <main className="px-4 sm:px-6 lg:px-8 py-4 sm:py-8 pb-20 sm:pb-8">
         <Card className="mb-4 sm:mb-6">
           <CardContent className="pt-4 sm:pt-6">
@@ -216,22 +201,22 @@ export default function GuestsPage() {
                 />
               </div>
               <Badge variant="secondary" className="self-center">
-                {filteredGuests.length} guests
+                {guests.length} guests
               </Badge>
             </div>
           </CardContent>
         </Card>
 
+        {/* Guest Cards */}
         <div className="space-y-3 sm:space-y-4">
-          {filteredGuests.map((guest) => (
+          {guests.map((guest: Guest) => (
             <Card key={guest.guest_id}>
               <CardContent className="pt-4 sm:pt-6">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
                   <div className="flex items-center space-x-3 sm:space-x-4">
                     <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
                       <span className="text-blue-600 font-semibold text-sm sm:text-base">
-                        {guest.first_name[0]}
-                        {guest.last_name[0]}
+                        {guest.first_name[0]}{guest.last_name[0]}
                       </span>
                     </div>
                     <div className="min-w-0 flex-1">
@@ -253,13 +238,16 @@ export default function GuestsPage() {
                   <div className="flex items-center justify-between sm:justify-end sm:space-x-4">
                     <div className="text-right">
                       <div className="text-sm font-medium">{guest.total_bookings} bookings</div>
-                      <div className="text-xs text-gray-500">Last: {guest.last_visit}</div>
+                      <div className="text-xs text-gray-500">Last: {formatYYYYMMDDHHmmssToReadable(guest.updated_at)}</div>
                     </div>
                     <div className="flex space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => handleEditGuest(guest)}>
+                      <Button variant="outline" size="sm" onClick={() => {
+                        setEditingGuest(guest);
+                        form.reset(guest);
+                      }}>
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="outline" size="sm" onClick={() => handleDeleteGuest(guest.guest_id)}>
+                      <Button variant="outline" size="sm">
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -269,65 +257,7 @@ export default function GuestsPage() {
             </Card>
           ))}
         </div>
-
-        {/* Edit Guest Dialog */}
-        <Dialog open={!!editingGuest} onOpenChange={() => setEditingGuest(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Edit Guest</DialogTitle>
-              <DialogDescription>Update the guest's information below.</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="edit_first_name">First Name</Label>
-                  <Input
-                    id="edit_first_name"
-                    value={formData.first_name}
-                    onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="edit_last_name">Last Name</Label>
-                  <Input
-                    id="edit_last_name"
-                    value={formData.last_name}
-                    onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                  />
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="edit_email">Email</Label>
-                <Input
-                  id="edit_email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit_phone">Phone</Label>
-                <Input
-                  id="edit_phone"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit_id_card_number">ID Card Number</Label>
-                <Input
-                  id="edit_id_card_number"
-                  value={formData.id_card_number}
-                  onChange={(e) => setFormData({ ...formData, id_card_number: e.target.value })}
-                />
-              </div>
-              <Button onClick={handleUpdateGuest} className="w-full">
-                Update Guest
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
       </main>
     </div>
-  )
+  );
 }

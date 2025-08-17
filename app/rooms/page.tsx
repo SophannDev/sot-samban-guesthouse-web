@@ -221,13 +221,13 @@ export default function RoomsPage() {
     maintenance: rooms.filter((r) => r.status === "Maintenance").length,
   };
 
-  // const {
-  //   data: room,
-  //   isLoading: isRoomsLoading,
-  //   isError: isRoomsError,
-  // } = useRooms();
+  const {
+    data: room,
+    isLoading: isRoomsLoading,
+    isError: isRoomsError,
+  } = useRooms();
 
-  // console.log("room", room);
+  console.log("room", room);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -237,9 +237,10 @@ export default function RoomsPage() {
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-4 gap-4">
             <div className="flex items-center space-x-4">
-              <Link href="/" className="sm:hidden">
+              <Link href="/">
                 <Button variant="ghost" size="sm">
-                  <ArrowLeft className="h-4 w-4" />
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Dashboard
                 </Button>
               </Link>
               <div>

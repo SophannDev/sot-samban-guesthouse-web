@@ -1,9 +1,12 @@
+// layout.tsx — still a server component
 import type React from "react";
 import type { Metadata, Viewport } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import Providers from "@/components/Providers";
+import ClientFontStyles from "@/components/ClientFontStyles"; // <-- client component
+import { Poppins } from "next/font/google";
 
 export const metadata: Metadata = {
   title: "Guest House Management System",
@@ -27,6 +30,13 @@ export const viewport: Viewport = {
   themeColor: "#ffffff",
 };
 
+// Load Poppins with weights 400 & 700
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["400", "700"],
+  variable: "--font-poppins", // optional CSS variable
+});
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -35,15 +45,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <style>{`
-html {
-  font-family: ${GeistSans.style.fontFamily};
-  --font-sans: ${GeistSans.variable};
-  --font-mono: ${GeistMono.variable};
-}
-        `}</style>
+        <ClientFontStyles />
       </head>
-      <body className="min-h-screen bg-background font-sans antialiased">
+      <body className={`${poppins.className} min-h-screen bg-background antialiased`}>
         <Providers>{children}</Providers>
       </body>
     </html>
