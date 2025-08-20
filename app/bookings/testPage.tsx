@@ -44,25 +44,22 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { MobileNav } from "@/components/mobile-nav";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import bookingService from "@/service/booking.service";
-import { formatDateYYYYMMDD } from "@/utils/DateFormat";
+import { toast } from "sonner"; // or your preferred toast library
 
-interface APIBooking {
-  booking_id: number;
-  room_id: number;
+interface Booking {
+  booking_id: string;
+  guest_id: string;
+  guest_name: string;
+  room_id: string;
   room_number: string;
-  guest_id: number;
-  first_name: string;
-  last_name: string;
-  actual_check_in: string;
-  actual_check_out: string;
-  booking_status: string;
-  booking_status_label: string;
+  room_type: string;
+  check_in_date: string;
+  check_out_date: string;
   total_amount: number;
+  booking_status: string;
+  nights: number;
   notes?: string;
-  room_type_name: string;
-  room_status: string;
 }
 
 interface CreateBookingRequest {
@@ -75,83 +72,69 @@ interface CreateBookingRequest {
   room_ids: number;
 }
 
-interface UpdateBookingRequest {
-  actual_check_in: string;
-  actual_check_out: string;
-  booking_status: string;
-  total_amount: number;
-  notes?: string;
-  guest_ids: number;
-  room_ids: number;
-}
+// Mock data for guests and rooms (these should ideally come from API as well)
+const mockGuests = [
+  { guest_id: "1", name: "John Smith" },
+  { guest_id: "2", name: "Sarah Johnson" },
+  { guest_id: "3", name: "Michael Brown" },
+  { guest_id: "4", name: "Emma Wilson" },
+];
+
+const mockRooms = [
+  {
+    room_id: "1",
+    room_number: "101",
+    room_type: "single",
+    price: 80,
+    available: true,
+  },
+  {
+    room_id: "2",
+    room_number: "102",
+    room_type: "double",
+    price: 120,
+    available: true,
+  },
+  {
+    room_id: "3",
+    room_number: "103",
+    room_type: "suite",
+    price: 200,
+    available: true,
+  },
+  {
+    room_id: "4",
+    room_number: "201",
+    room_type: "single",
+    price: 85,
+    available: true,
+  },
+];
 
 export default function BookingsPage() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [editingBooking, setEditingBooking] = useState<APIBooking | null>(null);
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [checkInDate, setCheckInDate] = useState<Date>();
   const [checkOutDate, setCheckOutDate] = useState<Date>();
   const [formData, setFormData] = useState({
     guest_id: "",
     room_id: "",
-    booking_status: "1",
+    booking_status: "1", // Using "1" as per your API format
     notes: "",
   });
 
   // Fetch all bookings using React Query
   const {
-    data: apiResponse,
+    data: bookings = [],
     isLoading,
     error,
   } = useQuery({
     queryKey: ["bookings"],
     queryFn: bookingService.getAllBookings,
   });
-
-  console.log("apiResponse", apiResponse);
-
-  const bookings: APIBooking[] = apiResponse?.bookings || [];
-
-  // Create unique guests and rooms lists from bookings data
-  const uniqueGuests = bookings.reduce(
-    (
-      acc: { guest_id: number; first_name: string; last_name: string }[],
-      booking
-    ) => {
-      const existingGuest = acc.find(
-        (guest) => guest.guest_id === booking.guest_id
-      );
-      if (!existingGuest) {
-        acc.push({
-          guest_id: booking.guest_id,
-          first_name: booking.first_name,
-          last_name: booking.last_name,
-        });
-      }
-      return acc;
-    },
-    []
-  );
-
-  const uniqueRooms = bookings.reduce(
-    (
-      acc: { room_id: number; room_number: string; room_type_name: string }[],
-      booking
-    ) => {
-      const existingRoom = acc.find((room) => room.room_id === booking.room_id);
-      if (!existingRoom) {
-        acc.push({
-          room_id: booking.room_id,
-          room_number: booking.room_number,
-          room_type_name: booking.room_type_name,
-        });
-      }
-      return acc;
-    },
-    []
-  );
 
   // Create booking mutation
   const createBookingMutation = useMutation({
@@ -175,7 +158,7 @@ export default function BookingsPage() {
       data,
     }: {
       bookingId: string;
-      data: UpdateBookingRequest;
+      data: CreateBookingRequest;
     }) => bookingService.updateBooking(bookingId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bookings"] });
@@ -203,33 +186,22 @@ export default function BookingsPage() {
   });
 
   const filteredBookings = bookings.filter((booking) => {
-    const fullName = `${booking.first_name} ${booking.last_name}`;
     const matchesSearch =
-      fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      booking.guest_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       booking.room_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      booking.booking_id.toString().includes(searchTerm.toLowerCase());
+      booking.booking_id.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus =
       statusFilter === "all" || booking.booking_status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
-  // Helper function to calculate nights between dates
-  const calculateNightsFromAPI = (checkIn: string, checkOut: string) => {
-    if (!checkIn || !checkOut) return 0;
-    const checkInDate = new Date(
-      `${checkIn.substring(0, 4)}-${checkIn.substring(
-        4,
-        6
-      )}-${checkIn.substring(6, 8)}`
+  const calculateTotal = (roomId: string, checkIn: Date, checkOut: Date) => {
+    const room = mockRooms.find((r) => r.room_id === roomId);
+    if (!room || !checkIn || !checkOut) return 0;
+    const nights = Math.ceil(
+      (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24)
     );
-    const checkOutDate = new Date(
-      `${checkOut.substring(0, 4)}-${checkOut.substring(
-        4,
-        6
-      )}-${checkOut.substring(6, 8)}`
-    );
-    const diffTime = Math.abs(checkOutDate.getTime() - checkInDate.getTime());
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return room.price * nights;
   };
 
   const calculateNights = (checkIn: Date, checkOut: Date) => {
@@ -249,37 +221,6 @@ export default function BookingsPage() {
     setCheckOutDate(undefined);
   };
 
-  const getRoomPrice = (roomId: string) => {
-    // Get price based on room type from existing bookings data
-    const roomBooking = bookings.find(
-      (booking) => booking.room_id.toString() === roomId
-    );
-    if (roomBooking) {
-      const nights = calculateNightsFromAPI(
-        roomBooking.actual_check_in,
-        roomBooking.actual_check_out
-      );
-      if (nights > 0) {
-        return Math.round(roomBooking.total_amount / nights);
-      }
-    }
-    // Fallback prices based on room type
-    const room = uniqueRooms.find((r) => r.room_id.toString() === roomId);
-    if (room) {
-      switch (room.room_type_name.toLowerCase()) {
-        case "single bed":
-          return 20000;
-        case "double bed":
-          return 40000;
-        case "suite":
-          return 60000;
-        default:
-          return 20000;
-      }
-    }
-    return 20000; // Default fallback
-  };
-
   const handleAddBooking = () => {
     if (
       !checkInDate ||
@@ -291,11 +232,7 @@ export default function BookingsPage() {
       return;
     }
 
-    // For now, we'll use a simple calculation since we don't have room prices from API
-    // You should fetch room prices from your rooms API endpoint
-    const roomPrice = getRoomPrice(formData.room_id); // Default price per night
-    const nights = calculateNights(checkInDate, checkOutDate);
-    const total = roomPrice * nights;
+    const total = calculateTotal(formData.room_id, checkInDate, checkOutDate);
 
     const bookingData: CreateBookingRequest = {
       actual_check_in: formatDateForAPI(checkInDate),
@@ -310,49 +247,24 @@ export default function BookingsPage() {
     createBookingMutation.mutate(bookingData);
   };
 
-  const handleEditBooking = (booking: APIBooking) => {
+  const handleEditBooking = (booking: Booking) => {
     setEditingBooking(booking);
     setFormData({
-      guest_id: booking.guest_id.toString(),
-      room_id: booking.room_id.toString(),
+      guest_id: booking.guest_id,
+      room_id: booking.room_id,
       booking_status: booking.booking_status,
       notes: booking.notes || "",
     });
-
-    // Convert API date format to Date object
-    const checkInStr = booking.actual_check_in;
-    const checkOutStr = booking.actual_check_out;
-
-    if (checkInStr && checkInStr.length === 8) {
-      const checkInDate = new Date(
-        `${checkInStr.substring(0, 4)}-${checkInStr.substring(
-          4,
-          6
-        )}-${checkInStr.substring(6, 8)}`
-      );
-      setCheckInDate(checkInDate);
-    }
-
-    if (checkOutStr && checkOutStr.length === 8) {
-      const checkOutDate = new Date(
-        `${checkOutStr.substring(0, 4)}-${checkOutStr.substring(
-          4,
-          6
-        )}-${checkOutStr.substring(6, 8)}`
-      );
-      setCheckOutDate(checkOutDate);
-    }
+    setCheckInDate(new Date(booking.check_in_date));
+    setCheckOutDate(new Date(booking.check_out_date));
   };
 
   const handleUpdateBooking = () => {
     if (!editingBooking || !checkInDate || !checkOutDate) return;
 
-    // Calculate total based on nights (you should get actual room price from API)
-    const estimatedPrice = 100;
-    const nights = calculateNights(checkInDate, checkOutDate);
-    const total = estimatedPrice * nights;
+    const total = calculateTotal(formData.room_id, checkInDate, checkOutDate);
 
-    const bookingData: UpdateBookingRequest = {
+    const bookingData: CreateBookingRequest = {
       actual_check_in: formatDateForAPI(checkInDate),
       actual_check_out: formatDateForAPI(checkOutDate),
       booking_status: formData.booking_status,
@@ -363,36 +275,29 @@ export default function BookingsPage() {
     };
 
     updateBookingMutation.mutate({
-      bookingId: editingBooking.booking_id.toString(),
+      bookingId: editingBooking.booking_id,
       data: bookingData,
     });
   };
 
-  const handleDeleteBooking = (bookingId: number) => {
+  const handleDeleteBooking = (bookingId: string) => {
     if (window.confirm("Are you sure you want to delete this booking?")) {
-      deleteBookingMutation.mutate(bookingId.toString());
+      deleteBookingMutation.mutate(bookingId);
     }
   };
 
-  const handleStatusChange = (bookingId: number, newStatus: string) => {
-    // Find the booking to update
-    const booking = bookings.find((b) => b.booking_id === bookingId);
-    if (!booking) return;
-
-    const bookingData: UpdateBookingRequest = {
-      actual_check_in: booking.actual_check_in,
-      actual_check_out: booking.actual_check_out,
-      booking_status: newStatus,
-      total_amount: booking.total_amount,
-      notes: booking.notes,
-      guest_ids: booking.guest_id,
-      room_ids: booking.room_id,
-    };
-
-    updateBookingMutation.mutate({
-      bookingId: bookingId.toString(),
-      data: bookingData,
-    });
+  // Map booking status numbers to display names
+  const getStatusDisplay = (status: string) => {
+    switch (status) {
+      case "1":
+        return "Confirmed";
+      case "2":
+        return "Completed";
+      case "3":
+        return "Cancelled";
+      default:
+        return "Unknown";
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -410,9 +315,9 @@ export default function BookingsPage() {
 
   const bookingStats = {
     total: bookings.length,
-    confirmed: bookings.filter((b) => b.booking_status === "1").length,
-    completed: bookings.filter((b) => b.booking_status === "2").length,
-    cancelled: bookings.filter((b) => b.booking_status === "3").length,
+    confirmed: bookings.filter((b: any) => b.booking_status === "1").length,
+    completed: bookings.filter((b: any) => b.booking_status === "2").length,
+    cancelled: bookings.filter((b: any) => b.booking_status === "3").length,
   };
 
   if (isLoading) {
@@ -492,12 +397,12 @@ export default function BookingsPage() {
                         <SelectValue placeholder="Select guest" />
                       </SelectTrigger>
                       <SelectContent>
-                        {uniqueGuests.map((guest) => (
+                        {mockGuests.map((guest) => (
                           <SelectItem
                             key={guest.guest_id}
-                            value={guest.guest_id.toString()}
+                            value={guest.guest_id}
                           >
-                            {guest.first_name} {guest.last_name}
+                            {guest.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -515,35 +420,17 @@ export default function BookingsPage() {
                         <SelectValue placeholder="Select room" />
                       </SelectTrigger>
                       <SelectContent>
-                        {uniqueRooms.map((room) => (
-                          <SelectItem
-                            key={room.room_id}
-                            value={room.room_id.toString()}
-                          >
-                            Room {room.room_number} - {room.room_type_name}
-                          </SelectItem>
-                        ))}
+                        {mockRooms
+                          .filter((room) => room.available)
+                          .map((room) => (
+                            <SelectItem key={room.room_id} value={room.room_id}>
+                              Room {room.room_number} - {room.room_type} ($
+                              {room.price}/night)
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  {/* <div>
-                    <Label htmlFor="status">Booking Status</Label>
-                    <Select
-                      value={formData.booking_status}
-                      onValueChange={(value) =>
-                        setFormData({ ...formData, booking_status: value })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">Confirmed</SelectItem>
-                        <SelectItem value="2">Completed</SelectItem>
-                        <SelectItem value="3">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div> */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <Label>Check-in Date</Label>
@@ -601,7 +488,7 @@ export default function BookingsPage() {
                     </div>
                   </div>
                   <div>
-                    <Label htmlFor="notes">Notes</Label>
+                    <Label htmlFor="notes">Notes (Optional)</Label>
                     <Input
                       id="notes"
                       placeholder="Add booking notes..."
@@ -611,7 +498,7 @@ export default function BookingsPage() {
                       }
                     />
                   </div>
-                  {checkInDate && checkOutDate && (
+                  {checkInDate && checkOutDate && formData.room_id && (
                     <div className="p-3 bg-gray-50 rounded-lg">
                       <div className="text-sm space-y-1">
                         <div className="flex justify-between">
@@ -620,20 +507,15 @@ export default function BookingsPage() {
                             {calculateNights(checkInDate, checkOutDate)}
                           </span>
                         </div>
-                        <div className="flex justify-between">
-                          <span>Price per night:</span>
-                          <span>
-                            ${getRoomPrice(formData.room_id).toLocaleString()}
-                          </span>
-                        </div>
                         <div className="flex justify-between font-semibold">
                           <span>Total:</span>
                           <span>
                             $
-                            {(
-                              getRoomPrice(formData.room_id) *
-                              calculateNights(checkInDate, checkOutDate)
-                            ).toLocaleString()}
+                            {calculateTotal(
+                              formData.room_id,
+                              checkInDate,
+                              checkOutDate
+                            )}
                           </span>
                         </div>
                       </div>
@@ -725,30 +607,28 @@ export default function BookingsPage() {
         </Card>
 
         <div className="space-y-3 sm:space-y-4">
-          {filteredBookings.map((booking) => (
+          {filteredBookings.map((booking: any) => (
             <Card key={booking.booking_id}>
               <CardContent className="pt-4 sm:pt-6">
                 <div className="flex flex-col space-y-4">
                   <div className="flex items-center space-x-3 sm:space-x-4">
                     <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
                       <span className="text-blue-600 font-semibold text-xs sm:text-sm">
-                        {booking.booking_id}
+                        {booking.booking_id.toString().slice(-3)}
                       </span>
                     </div>
                     <div className="min-w-0 flex-1">
                       <h3 className="text-base sm:text-lg font-semibold truncate">
-                        {booking.first_name} {booking.last_name}
+                        {booking.guest_name}
                       </h3>
                       <div className="flex flex-col space-y-1 text-xs sm:text-sm text-gray-600">
                         <div className="flex items-center">
                           <User className="h-3 w-3 sm:h-4 sm:w-4 mr-1 flex-shrink-0" />
-                          <span className="truncate">
-                            ID: {booking.booking_id}
-                          </span>
+                          <span className="truncate">{booking.booking_id}</span>
                         </div>
                         <div className="flex items-center">
                           <Bed className="h-3 w-3 sm:h-4 sm:w-4 mr-1 flex-shrink-0" />
-                          Room {booking.room_number} ({booking.room_type_name})
+                          Room {booking.room_number} ({booking.room_type})
                         </div>
                       </div>
                     </div>
@@ -756,7 +636,7 @@ export default function BookingsPage() {
                       variant={getStatusColor(booking.booking_status)}
                       className="text-xs"
                     >
-                      {booking.booking_status_label}
+                      {getStatusDisplay(booking.booking_status)}
                     </Badge>
                   </div>
 
@@ -764,43 +644,15 @@ export default function BookingsPage() {
                     <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 space-y-1 sm:space-y-0">
                       <div className="flex items-center">
                         <CalendarIcon className="h-3 w-3 sm:h-4 sm:w-4 mr-1 flex-shrink-0" />
-                        {formatDateYYYYMMDD(booking.actual_check_in)} to{" "}
-                        {formatDateYYYYMMDD(booking.actual_check_out)}
+                        {booking.check_in_date} to {booking.check_out_date}
                       </div>
                       <div className="flex items-center">
                         <DollarSign className="h-3 w-3 sm:h-4 sm:w-4 mr-1 flex-shrink-0" />
-                        {(
-                          getRoomPrice(formData.room_id) *
-                          calculateNightsFromAPI(
-                            booking.actual_check_in,
-                            booking.actual_check_out
-                          )
-                        ).toLocaleString()}
-                        (
-                        {calculateNightsFromAPI(
-                          booking.actual_check_in,
-                          booking.actual_check_out
-                        )}{" "}
-                        nights)
+                        ${booking.total_amount} ({booking.nights} nights)
                       </div>
                     </div>
 
                     <div className="flex items-center space-x-2">
-                      <Select
-                        value={booking.booking_status}
-                        onValueChange={(value: string) =>
-                          handleStatusChange(booking.booking_id, value)
-                        }
-                      >
-                        <SelectTrigger className="w-28 h-8 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1">Confirmed</SelectItem>
-                          <SelectItem value="2">Completed</SelectItem>
-                          <SelectItem value="3">Cancelled</SelectItem>
-                        </SelectContent>
-                      </Select>
                       <Button
                         variant="outline"
                         size="sm"
@@ -829,12 +681,6 @@ export default function BookingsPage() {
               </CardContent>
             </Card>
           ))}
-
-          {filteredBookings.length === 0 && !isLoading && (
-            <div className="text-center py-8">
-              <p className="text-gray-500">No bookings found.</p>
-            </div>
-          )}
         </div>
 
         <Dialog
@@ -850,26 +696,45 @@ export default function BookingsPage() {
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label htmlFor="edit_guest">Guest ID</Label>
-                <Input
-                  id="edit_guest"
-                  type="number"
+                <Label htmlFor="edit_guest">Guest</Label>
+                <Select
                   value={formData.guest_id}
-                  onChange={(e) =>
-                    setFormData({ ...formData, guest_id: e.target.value })
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, guest_id: value })
                   }
-                />
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mockGuests.map((guest) => (
+                      <SelectItem key={guest.guest_id} value={guest.guest_id}>
+                        {guest.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
-                <Label htmlFor="edit_room">Room ID</Label>
-                <Input
-                  id="edit_room"
-                  type="number"
+                <Label htmlFor="edit_room">Room</Label>
+                <Select
                   value={formData.room_id}
-                  onChange={(e) =>
-                    setFormData({ ...formData, room_id: e.target.value })
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, room_id: value })
                   }
-                />
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mockRooms.map((room) => (
+                      <SelectItem key={room.room_id} value={room.room_id}>
+                        Room {room.room_number} - {room.room_type} ($
+                        {room.price}/night)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="edit_status">Status</Label>
@@ -954,7 +819,7 @@ export default function BookingsPage() {
                   }
                 />
               </div>
-              {checkInDate && checkOutDate && (
+              {checkInDate && checkOutDate && formData.room_id && (
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <div className="text-sm space-y-1">
                     <div className="flex justify-between">
@@ -962,9 +827,14 @@ export default function BookingsPage() {
                       <span>{calculateNights(checkInDate, checkOutDate)}</span>
                     </div>
                     <div className="flex justify-between font-semibold">
-                      <span>Estimated Total:</span>
+                      <span>Total:</span>
                       <span>
-                        ${100 * calculateNights(checkInDate, checkOutDate)}
+                        $
+                        {calculateTotal(
+                          formData.room_id,
+                          checkInDate,
+                          checkOutDate
+                        )}
                       </span>
                     </div>
                   </div>

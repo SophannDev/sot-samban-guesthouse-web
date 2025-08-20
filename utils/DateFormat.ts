@@ -1,4 +1,6 @@
-export const formatYYYYMMDDHHmmssToReadable = (dateTimeString: string): string => {
+export const formatYYYYMMDDHHmmssToReadable = (
+  dateTimeString: string
+): string => {
   if (!dateTimeString || dateTimeString.length !== 14) return "";
 
   const year = parseInt(dateTimeString.slice(0, 4), 10);
@@ -17,3 +19,19 @@ export const formatYYYYMMDDHHmmssToReadable = (dateTimeString: string): string =
     year: "numeric",
   });
 };
+
+export function formatDateYYYYMMDD(dateStr: string): string {
+  if (!dateStr || dateStr.length !== 8) return dateStr;
+
+  const year = dateStr.substring(0, 4);
+  const month = dateStr.substring(4, 6);
+  const day = dateStr.substring(6, 8);
+
+  const date = new Date(`${year}-${month}-${day}`);
+
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}

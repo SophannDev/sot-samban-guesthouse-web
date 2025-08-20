@@ -1,10 +1,10 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
+import { useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -12,230 +12,164 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Calendar } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Search, Plus, Edit, Trash2, CalendarIcon, ArrowLeft, Filter, Receipt } from "lucide-react"
-import { format } from "date-fns"
-import { cn } from "@/lib/utils"
-import Link from "next/link"
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Search,
+  Plus,
+  Edit,
+  Trash2,
+  Calendar as CalendarIcon,
+  ArrowLeft,
+  Filter,
+  Receipt,
+} from "lucide-react";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+import Link from "next/link";
+import { usePayment } from "@/hooks/use-payment";
 
-interface Payment {
-  payment_id: string
-  booking_id: string
-  guest_name: string
-  room_number: string
-  payment_date: string
-  amount_paid: number
-  payment_method: "Cash" | "Credit" | "Bank Transfer"
-  payment_status: "Paid" | "Pending"
-  booking_total: number
-  remaining_balance: number
+interface PaymentResponse {
+  id: number;
+  booking_id: number;
+  amount_paid: string;
+  payment_method: string;
+  payment_method_name: string;
+  payment_status: string;
+  payment_status_name: string;
+  notes: string;
+  guest_first_name: string;
+  guest_last_name: string;
+  payment_date: string;
+  room_num: string;
 }
 
-// Mock data for demonstration
-const mockPayments: Payment[] = [
-  {
-    payment_id: "P001",
-    booking_id: "B001",
-    guest_name: "John Smith",
-    room_number: "101",
-    payment_date: "2024-01-20",
-    amount_paid: 400,
-    payment_method: "Credit",
-    payment_status: "Paid",
-    booking_total: 400,
-    remaining_balance: 0,
-  },
-  {
-    payment_id: "P002",
-    booking_id: "B002",
-    guest_name: "Sarah Johnson",
-    room_number: "202",
-    payment_date: "2024-01-22",
-    amount_paid: 125,
-    payment_method: "Cash",
-    payment_status: "Paid",
-    booking_total: 250,
-    remaining_balance: 125,
-  },
-  {
-    payment_id: "P003",
-    booking_id: "B003",
-    guest_name: "Michael Brown",
-    room_number: "103",
-    payment_date: "2024-01-15",
-    amount_paid: 600,
-    payment_method: "Bank Transfer",
-    payment_status: "Paid",
-    booking_total: 600,
-    remaining_balance: 0,
-  },
-  {
-    payment_id: "P004",
-    booking_id: "B004",
-    guest_name: "Emma Wilson",
-    room_number: "201",
-    payment_date: "2024-01-25",
-    amount_paid: 0,
-    payment_method: "Credit",
-    payment_status: "Pending",
-    booking_total: 340,
-    remaining_balance: 340,
-  },
-]
-
-const mockBookings = [
-  { booking_id: "B001", guest_name: "John Smith", room_number: "101", total_amount: 400 },
-  { booking_id: "B002", guest_name: "Sarah Johnson", room_number: "202", total_amount: 250 },
-  { booking_id: "B003", guest_name: "Michael Brown", room_number: "103", total_amount: 600 },
-  { booking_id: "B004", guest_name: "Emma Wilson", room_number: "201", total_amount: 340 },
-  { booking_id: "B005", guest_name: "David Lee", room_number: "301", total_amount: 180 },
-]
-
 export default function PaymentsPage() {
-  const [payments, setPayments] = useState<Payment[]>(mockPayments)
-  const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [methodFilter, setMethodFilter] = useState<string>("all")
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
-  const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
-  const [paymentDate, setPaymentDate] = useState<Date>()
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [methodFilter, setMethodFilter] = useState<string>("all");
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<PaymentResponse | null>(
+    null
+  );
+  const [paymentDate, setPaymentDate] = useState<Date>();
   const [formData, setFormData] = useState({
     booking_id: "",
     amount_paid: 0,
-    payment_method: "Cash" as const,
-    payment_status: "Paid" as const,
-  })
+    payment_method: "1", // Cash
+    payment_status: "2", // Completed
+  });
 
+  // Use the custom hook
+  const { data: apiResponse, isLoading, error } = usePayment();
+
+  // Extract payments from API response
+  const payments: PaymentResponse[] = apiResponse?.data || [];
+
+  console.log("API Response:", apiResponse);
+  console.log("Payments:", payments);
+
+  // Filter payments based on search and filters
   const filteredPayments = payments.filter((payment) => {
     const matchesSearch =
-      payment.guest_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      payment.room_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      payment.payment_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      payment.booking_id.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesStatus = statusFilter === "all" || payment.payment_status === statusFilter
-    const matchesMethod = methodFilter === "all" || payment.payment_method === methodFilter
-    return matchesSearch && matchesStatus && matchesMethod
-  })
+      !searchTerm ||
+      payment.guest_first_name
+        ?.toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
+      payment.guest_last_name
+        ?.toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
+      payment.room_num?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      payment.id?.toString().includes(searchTerm) ||
+      payment.booking_id?.toString().includes(searchTerm);
 
-  const handleAddPayment = () => {
-    if (!paymentDate || !formData.booking_id) return
+    const matchesStatus =
+      statusFilter === "all" || payment.payment_status === statusFilter;
+    const matchesMethod =
+      methodFilter === "all" || payment.payment_method === methodFilter;
 
-    const selectedBooking = mockBookings.find((b) => b.booking_id === formData.booking_id)
-    if (!selectedBooking) return
+    return matchesSearch && matchesStatus && matchesMethod;
+  });
 
-    const existingPayment = payments.find((p) => p.booking_id === formData.booking_id)
-    const previouslyPaid = existingPayment ? existingPayment.amount_paid : 0
-    const remainingBalance = selectedBooking.total_amount - previouslyPaid - formData.amount_paid
-
-    const newPayment: Payment = {
-      payment_id: `P${String(payments.length + 1).padStart(3, "0")}`,
-      booking_id: formData.booking_id,
-      guest_name: selectedBooking.guest_name,
-      room_number: selectedBooking.room_number,
-      payment_date: format(paymentDate, "yyyy-MM-dd"),
-      amount_paid: formData.amount_paid,
-      payment_method: formData.payment_method,
-      payment_status: formData.payment_status,
-      booking_total: selectedBooking.total_amount,
-      remaining_balance: Math.max(0, remainingBalance),
-    }
-
-    setPayments([...payments, newPayment])
-    setFormData({ booking_id: "", amount_paid: 0, payment_method: "Cash", payment_status: "Paid" })
-    setPaymentDate(undefined)
-    setIsAddDialogOpen(false)
-  }
-
-  const handleEditPayment = (payment: Payment) => {
-    setEditingPayment(payment)
-    setFormData({
-      booking_id: payment.booking_id,
-      amount_paid: payment.amount_paid,
-      payment_method: payment.payment_method,
-      payment_status: payment.payment_status,
-    })
-    setPaymentDate(new Date(payment.payment_date))
-  }
-
-  const handleUpdatePayment = () => {
-    if (!editingPayment || !paymentDate) return
-
-    const selectedBooking = mockBookings.find((b) => b.booking_id === formData.booking_id)
-    if (!selectedBooking) return
-
-    const remainingBalance = selectedBooking.total_amount - formData.amount_paid
-
-    setPayments(
-      payments.map((payment) =>
-        payment.payment_id === editingPayment.payment_id
-          ? {
-              ...payment,
-              booking_id: formData.booking_id,
-              guest_name: selectedBooking.guest_name,
-              room_number: selectedBooking.room_number,
-              payment_date: format(paymentDate, "yyyy-MM-dd"),
-              amount_paid: formData.amount_paid,
-              payment_method: formData.payment_method,
-              payment_status: formData.payment_status,
-              booking_total: selectedBooking.total_amount,
-              remaining_balance: Math.max(0, remainingBalance),
-            }
-          : payment,
-      ),
-    )
-    setEditingPayment(null)
-    setFormData({ booking_id: "", amount_paid: 0, payment_method: "Cash", payment_status: "Paid" })
-    setPaymentDate(undefined)
-  }
-
-  const handleDeletePayment = (paymentId: string) => {
-    setPayments(payments.filter((payment) => payment.payment_id !== paymentId))
-  }
-
-  const handleStatusChange = (paymentId: string, newStatus: Payment["payment_status"]) => {
-    setPayments(
-      payments.map((payment) =>
-        payment.payment_id === paymentId ? { ...payment, payment_status: newStatus } : payment,
-      ),
-    )
-  }
-
-  const getStatusColor = (status: Payment["payment_status"]) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
-      case "Paid":
-        return "secondary"
+      case "2": // Completed
+      case "Completed":
+        return "default";
+      case "1": // Pending
       case "Pending":
-        return "destructive"
+        return "destructive";
       default:
-        return "secondary"
+        return "secondary";
     }
-  }
+  };
 
-  const getMethodIcon = (method: Payment["payment_method"]) => {
+  const getMethodIcon = (method: string) => {
     switch (method) {
+      case "1":
       case "Cash":
-        return "💵"
-      case "Credit":
-        return "💳"
+        return "💵";
+      case "2":
+      case "Credit Card":
+        return "💳";
+      case "3":
       case "Bank Transfer":
-        return "🏦"
+        return "🏦";
       default:
-        return "💰"
+        return "💰";
     }
-  }
+  };
 
+  // Calculate payment statistics
   const paymentStats = {
     total: payments.length,
-    paid: payments.filter((p) => p.payment_status === "Paid").length,
-    pending: payments.filter((p) => p.payment_status === "Pending").length,
-    totalRevenue: payments.filter((p) => p.payment_status === "Paid").reduce((sum, p) => sum + p.amount_paid, 0),
+    paid: payments.filter(
+      (p) => p.payment_status === "2" || p.payment_status_name === "Completed"
+    ).length,
+    pending: payments.filter(
+      (p) => p.payment_status === "1" || p.payment_status_name === "Pending"
+    ).length,
+    totalRevenue: payments
+      .filter(
+        (p) => p.payment_status === "2" || p.payment_status_name === "Completed"
+      )
+      .reduce((sum, p) => sum + parseFloat(p.amount_paid || "0"), 0),
     pendingAmount: payments
-      .filter((p) => p.payment_status === "Pending")
-      .reduce((sum, p) => sum + p.remaining_balance, 0),
+      .filter(
+        (p) => p.payment_status === "1" || p.payment_status_name === "Pending"
+      )
+      .reduce((sum, p) => sum + parseFloat(p.amount_paid || "0"), 0),
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div>Loading payments...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-red-500">
+          Error loading payments: {error.message}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -252,8 +186,12 @@ export default function PaymentsPage() {
                 </Button>
               </Link>
               <div>
-                <h1 className="text-3xl font-bold text-gray-900">Payment Tracking</h1>
-                <p className="text-gray-600">Manage payments and financial transactions</p>
+                <h1 className="text-3xl font-bold text-gray-900">
+                  Payment Tracking
+                </h1>
+                <p className="text-gray-600">
+                  Manage payments and financial transactions
+                </p>
               </div>
             </div>
             <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
@@ -266,27 +204,22 @@ export default function PaymentsPage() {
               <DialogContent className="max-w-md">
                 <DialogHeader>
                   <DialogTitle>Process Payment</DialogTitle>
-                  <DialogDescription>Enter the payment details below.</DialogDescription>
+                  <DialogDescription>
+                    Enter the payment details below.
+                  </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
+                  {/* Add your form fields here */}
                   <div>
-                    <Label htmlFor="booking">Booking</Label>
-                    <Select
+                    <Label htmlFor="booking">Booking ID</Label>
+                    <Input
+                      id="booking"
                       value={formData.booking_id}
-                      onValueChange={(value) => setFormData({ ...formData, booking_id: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select booking" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {mockBookings.map((booking) => (
-                          <SelectItem key={booking.booking_id} value={booking.booking_id}>
-                            {booking.booking_id} - {booking.guest_name} (Room {booking.room_number}) - $
-                            {booking.total_amount}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      onChange={(e) =>
+                        setFormData({ ...formData, booking_id: e.target.value })
+                      }
+                      placeholder="Enter booking ID"
+                    />
                   </div>
                   <div>
                     <Label htmlFor="amount">Amount Paid ($)</Label>
@@ -294,7 +227,12 @@ export default function PaymentsPage() {
                       id="amount"
                       type="number"
                       value={formData.amount_paid}
-                      onChange={(e) => setFormData({ ...formData, amount_paid: Number(e.target.value) })}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          amount_paid: Number(e.target.value),
+                        })
+                      }
                       placeholder="0.00"
                     />
                   </div>
@@ -302,7 +240,7 @@ export default function PaymentsPage() {
                     <Label htmlFor="method">Payment Method</Label>
                     <Select
                       value={formData.payment_method}
-                      onValueChange={(value: Payment["payment_method"]) =>
+                      onValueChange={(value) =>
                         setFormData({ ...formData, payment_method: value })
                       }
                     >
@@ -310,52 +248,13 @@ export default function PaymentsPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Cash">Cash</SelectItem>
-                        <SelectItem value="Credit">Credit Card</SelectItem>
-                        <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                        <SelectItem value="1">Cash</SelectItem>
+                        <SelectItem value="2">Credit Card</SelectItem>
+                        <SelectItem value="3">Bank Transfer</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
-                    <Label>Payment Date</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            "w-full justify-start text-left font-normal",
-                            !paymentDate && "text-muted-foreground",
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {paymentDate ? format(paymentDate, "PPP") : "Pick date"}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar mode="single" selected={paymentDate} onSelect={setPaymentDate} initialFocus />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                  <div>
-                    <Label htmlFor="status">Payment Status</Label>
-                    <Select
-                      value={formData.payment_status}
-                      onValueChange={(value: Payment["payment_status"]) =>
-                        setFormData({ ...formData, payment_status: value })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Paid">Paid</SelectItem>
-                        <SelectItem value="Pending">Pending</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button onClick={handleAddPayment} className="w-full">
-                    Process Payment
-                  </Button>
+                  <Button className="w-full">Process Payment</Button>
                 </div>
               </DialogContent>
             </Dialog>
@@ -375,25 +274,33 @@ export default function PaymentsPage() {
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold text-green-600">{paymentStats.paid}</div>
+              <div className="text-2xl font-bold text-green-600">
+                {paymentStats.paid}
+              </div>
               <p className="text-xs text-muted-foreground">Paid</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold text-red-600">{paymentStats.pending}</div>
+              <div className="text-2xl font-bold text-red-600">
+                {paymentStats.pending}
+              </div>
               <p className="text-xs text-muted-foreground">Pending</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold text-blue-600">${paymentStats.totalRevenue}</div>
+              <div className="text-2xl font-bold text-blue-600">
+                ${paymentStats.totalRevenue.toFixed(2)}
+              </div>
               <p className="text-xs text-muted-foreground">Total Revenue</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold text-orange-600">${paymentStats.pendingAmount}</div>
+              <div className="text-2xl font-bold text-orange-600">
+                ${paymentStats.pendingAmount.toFixed(2)}
+              </div>
               <p className="text-xs text-muted-foreground">Pending Amount</p>
             </CardContent>
           </Card>
@@ -419,8 +326,10 @@ export default function PaymentsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="Paid">Paid</SelectItem>
-                  <SelectItem value="Pending">Pending</SelectItem>
+                  <SelectItem value="1">Pending</SelectItem>
+                  <SelectItem value="2">Completed</SelectItem>
+                  <SelectItem value="3">Failed</SelectItem>
+                  <SelectItem value="4">Refunded</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={methodFilter} onValueChange={setMethodFilter}>
@@ -429,12 +338,14 @@ export default function PaymentsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Methods</SelectItem>
-                  <SelectItem value="Cash">Cash</SelectItem>
-                  <SelectItem value="Credit">Credit Card</SelectItem>
-                  <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                  <SelectItem value="1">Cash</SelectItem>
+                  <SelectItem value="2">Credit Card</SelectItem>
+                  <SelectItem value="3">Bank Transfer</SelectItem>
                 </SelectContent>
               </Select>
-              <Badge variant="secondary">{filteredPayments.length} payments</Badge>
+              <Badge variant="secondary">
+                {filteredPayments.length} payments
+              </Badge>
             </div>
           </CardContent>
         </Card>
@@ -442,7 +353,7 @@ export default function PaymentsPage() {
         {/* Payments List */}
         <div className="grid gap-4">
           {filteredPayments.map((payment) => (
-            <Card key={payment.payment_id}>
+            <Card key={payment.id}>
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-4">
@@ -450,16 +361,20 @@ export default function PaymentsPage() {
                       <Receipt className="h-6 w-6 text-green-600" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-semibold">{payment.guest_name}</h3>
+                      <h3 className="text-lg font-semibold">
+                        {payment.guest_first_name} {payment.guest_last_name}
+                      </h3>
                       <div className="flex items-center space-x-4 text-sm text-gray-600">
                         <div className="flex items-center">
-                          <span className="mr-1">{payment.payment_id}</span>
+                          <span className="mr-1">ID: {payment.id}</span>
                         </div>
                         <div className="flex items-center">
-                          <span className="mr-1">Booking: {payment.booking_id}</span>
+                          <span className="mr-1">
+                            Booking: {payment.booking_id}
+                          </span>
                         </div>
                         <div className="flex items-center">
-                          <span className="mr-1">Room {payment.room_number}</span>
+                          <span className="mr-1">Room {payment.room_num}</span>
                         </div>
                         <div className="flex items-center">
                           <CalendarIcon className="h-4 w-4 mr-1" />
@@ -467,7 +382,8 @@ export default function PaymentsPage() {
                         </div>
                         <div className="flex items-center">
                           <span className="mr-1">
-                            {getMethodIcon(payment.payment_method)} {payment.payment_method}
+                            {getMethodIcon(payment.payment_method)}{" "}
+                            {payment.payment_method_name}
                           </span>
                         </div>
                       </div>
@@ -475,32 +391,32 @@ export default function PaymentsPage() {
                   </div>
                   <div className="flex items-center space-x-4">
                     <div className="text-right">
-                      <div className="text-lg font-semibold text-green-600">${payment.amount_paid}</div>
-                      <div className="text-xs text-gray-500">Total: ${payment.booking_total}</div>
-                      {payment.remaining_balance > 0 && (
-                        <div className="text-xs text-red-500">Balance: ${payment.remaining_balance}</div>
-                      )}
+                      <div className="text-lg font-semibold text-green-600">
+                        ${payment.amount_paid}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {payment.notes && `Note: ${payment.notes}`}
+                      </div>
                     </div>
-                    <Badge variant={getStatusColor(payment.payment_status)}>{payment.payment_status}</Badge>
-                    <Select
-                      value={payment.payment_status}
-                      onValueChange={(value: Payment["payment_status"]) =>
-                        handleStatusChange(payment.payment_id, value)
-                      }
-                    >
-                      <SelectTrigger className="w-32">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Paid">Paid</SelectItem>
-                        <SelectItem value="Pending">Pending</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Badge variant={getStatusColor(payment.payment_status)}>
+                      {payment.payment_status_name}
+                    </Badge>
                     <div className="flex space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => handleEditPayment(payment)}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEditingPayment(payment)}
+                      >
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="outline" size="sm" onClick={() => handleDeletePayment(payment.payment_id)}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          // Handle delete
+                          console.log("Delete payment:", payment.id);
+                        }}
+                      >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -511,104 +427,25 @@ export default function PaymentsPage() {
           ))}
         </div>
 
-        {/* Edit Payment Dialog */}
-        <Dialog open={!!editingPayment} onOpenChange={() => setEditingPayment(null)}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Edit Payment</DialogTitle>
-              <DialogDescription>Update the payment details below.</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="edit_booking">Booking</Label>
-                <Select
-                  value={formData.booking_id}
-                  onValueChange={(value) => setFormData({ ...formData, booking_id: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {mockBookings.map((booking) => (
-                      <SelectItem key={booking.booking_id} value={booking.booking_id}>
-                        {booking.booking_id} - {booking.guest_name} (Room {booking.room_number}) - $
-                        {booking.total_amount}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+        {/* Show message if no payments */}
+        {filteredPayments.length === 0 && (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center py-8">
+                <Receipt className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  No payments found
+                </h3>
+                <p className="text-gray-600">
+                  {payments.length === 0
+                    ? "No payments have been processed yet."
+                    : "No payments match your current filters."}
+                </p>
               </div>
-              <div>
-                <Label htmlFor="edit_amount">Amount Paid ($)</Label>
-                <Input
-                  id="edit_amount"
-                  type="number"
-                  value={formData.amount_paid}
-                  onChange={(e) => setFormData({ ...formData, amount_paid: Number(e.target.value) })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit_method">Payment Method</Label>
-                <Select
-                  value={formData.payment_method}
-                  onValueChange={(value: Payment["payment_method"]) =>
-                    setFormData({ ...formData, payment_method: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Cash">Cash</SelectItem>
-                    <SelectItem value="Credit">Credit Card</SelectItem>
-                    <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Payment Date</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !paymentDate && "text-muted-foreground",
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {paymentDate ? format(paymentDate, "PPP") : "Pick date"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar mode="single" selected={paymentDate} onSelect={setPaymentDate} initialFocus />
-                  </PopoverContent>
-                </Popover>
-              </div>
-              <div>
-                <Label htmlFor="edit_status">Payment Status</Label>
-                <Select
-                  value={formData.payment_status}
-                  onValueChange={(value: Payment["payment_status"]) =>
-                    setFormData({ ...formData, payment_status: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Paid">Paid</SelectItem>
-                    <SelectItem value="Pending">Pending</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button onClick={handleUpdatePayment} className="w-full">
-                Update Payment
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </CardContent>
+          </Card>
+        )}
       </main>
     </div>
-  )
+  );
 }

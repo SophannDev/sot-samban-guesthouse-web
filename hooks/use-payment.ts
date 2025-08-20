@@ -1,13 +1,13 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
-import roomService from "@/service/room.service";
+import paymentService from "@/service/payment.service";
 
-export const useRooms = () => {
+export const usePayment = () => {
   return useQuery({
-    queryKey: ["rooms"],
+    queryKey: ["payments"],
     queryFn: async () => {
       try {
-        const result = await roomService.getAllRooms();
+        const result = await paymentService.getAllPayments();
         return result;
       } catch (error: any) {
         throw error;

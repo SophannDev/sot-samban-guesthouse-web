@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -28,6 +28,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
   Search,
   Plus,
   Edit,
@@ -40,82 +48,211 @@ import {
 import Link from "next/link";
 import { MobileNav } from "@/components/mobile-nav";
 import { useRooms } from "@/hooks/use-room";
+import * as z from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import roomService from "@/service/room.service";
 
 interface Room {
   room_id: string;
   room_number: string;
-  room_type: "single" | "double" | "suite";
+  room_type: string;
   price_per_night: number;
-  status: "Available" | "Occupied" | "Maintenance";
+  status: string;
   current_guest?: string;
   check_out_date?: string;
+  status_label: string;
 }
 
-// Mock data for demonstration
-const mockRooms: Room[] = [
-  {
-    room_id: "R001",
-    room_number: "101",
-    room_type: "single",
-    price_per_night: 80,
-    status: "Occupied",
-    current_guest: "John Smith",
-    check_out_date: "2024-01-25",
-  },
-  {
-    room_id: "R002",
-    room_number: "102",
-    room_type: "double",
-    price_per_night: 120,
-    status: "Available",
-  },
-  {
-    room_id: "R003",
-    room_number: "103",
-    room_type: "suite",
-    price_per_night: 200,
-    status: "Maintenance",
-  },
-  {
-    room_id: "R004",
-    room_number: "201",
-    room_type: "single",
-    price_per_night: 85,
-    status: "Available",
-  },
-  {
-    room_id: "R005",
-    room_number: "202",
-    room_type: "double",
-    price_per_night: 125,
-    status: "Occupied",
-    current_guest: "Sarah Johnson",
-    check_out_date: "2024-01-23",
-  },
-  {
-    room_id: "R006",
-    room_number: "203",
-    room_type: "suite",
-    price_per_night: 220,
-    status: "Available",
-  },
-];
+// Validation schema
+const roomSchema = z.object({
+  room_number: z.string().min(1, "Room number is required"),
+  room_type_id: z.coerce.number().min(1, "Room type is required"),
+  price_per_night: z.coerce
+    .number()
+    .min(1, "Price per night must be at least $1"),
+  status: z.string().min(1, "Status is required"),
+});
+
+type RoomFormValues = z.infer<typeof roomSchema>;
+
+// Helper functions to convert between API and display formats
+const roomTypeToId = (type: string): number => {
+  switch (type) {
+    case "single":
+      return 1;
+    case "double":
+      return 2;
+    case "suite":
+      return 3;
+    default:
+      return 1;
+  }
+};
+
+const roomTypeFromId = (id: number): string => {
+  switch (id) {
+    case 1:
+      return "single";
+    case 2:
+      return "double";
+    case 3:
+      return "suite";
+    default:
+      return "single";
+  }
+};
+
+const statusToId = (status: string): string => {
+  switch (status) {
+    case "Available":
+      return "1";
+    case "Occupied":
+      return "2";
+    case "Maintenance":
+      return "3";
+    default:
+      return "1";
+  }
+};
+
+const statusFromId = (id: string): string => {
+  switch (id) {
+    case "1":
+      return "Available";
+    case "2":
+      return "Occupied";
+    case "3":
+      return "Maintenance";
+    default:
+      return "Available";
+  }
+};
 
 export default function RoomsPage() {
-  const [rooms, setRooms] = useState<Room[]>(mockRooms);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
-  const [formData, setFormData] = useState({
-    room_number: "",
-    room_type: "single" as const,
-    price_per_night: 0,
-    status: "Available" as const,
+  const [isClient, setIsClient] = useState(false);
+
+  // Mark component as client-rendered
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+  // Form for adding new rooms
+  const addForm = useForm<RoomFormValues>({
+    resolver: zodResolver(roomSchema),
+    defaultValues: {
+      room_number: "",
+      room_type_id: 1,
+      price_per_night: 0,
+      status: "1",
+    },
   });
 
-  const filteredRooms = rooms.filter((room) => {
+  // Form for editing existing rooms
+  const editForm = useForm<RoomFormValues>({
+    resolver: zodResolver(roomSchema),
+    defaultValues: {
+      room_number: "",
+      room_type_id: 1,
+      price_per_night: 0,
+      status: "1",
+    },
+  });
+
+  const queryClient = useQueryClient();
+  const { data: roomsData, isLoading } = useRooms();
+  const rooms = roomsData?.rooms ?? [];
+
+  // Mark component as client-rendered
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  const createRoomMutation = useMutation({
+    mutationFn: (data: RoomFormValues) => roomService.createRoom(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rooms"] });
+      addForm.reset();
+      setIsAddDialogOpen(false);
+    },
+    onError: (error: any) => {
+      console.error("Failed to create room:", error?.message || error);
+    },
+  });
+
+  const updateRoomMutation = useMutation({
+    mutationFn: ({ roomId, data }: { roomId: string; data: RoomFormValues }) =>
+      roomService.updateRoom(roomId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rooms"] });
+      editForm.reset();
+      setEditingRoom(null);
+    },
+    onError: (error: any) => {
+      console.error("Failed to update room:", error?.message || error);
+    },
+  });
+
+  const deleteRoomMutation = useMutation({
+    mutationFn: (roomId: string) => roomService.deleteRoom(roomId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rooms"] });
+    },
+    onError: (error: any) => {
+      console.error("Failed to delete room:", error?.message || error);
+    },
+  });
+
+  const handleAddRoom = (data: RoomFormValues) => {
+    createRoomMutation.mutate(data);
+  };
+
+  const handleEditRoom = (room: Room) => {
+    setEditingRoom(room);
+    editForm.reset({
+      room_number: room.room_number,
+      room_type_id: roomTypeToId(room.room_type),
+      price_per_night: room.price_per_night,
+      status: statusToId(room.status),
+    });
+  };
+
+  const handleUpdateRoom = (data: RoomFormValues) => {
+    if (editingRoom) {
+      updateRoomMutation.mutate({
+        roomId: editingRoom.room_id,
+        data,
+      });
+    }
+  };
+
+  const handleDeleteRoom = (roomId: string) => {
+    deleteRoomMutation.mutate(roomId);
+  };
+
+  const handleStatusChange = (roomId: string, newStatus: string) => {
+    // This would typically be handled by a separate API call
+    // For now, we'll use the update mutation
+    const room = rooms.find((r: Room) => r.room_id === roomId);
+    if (room) {
+      updateRoomMutation.mutate({
+        roomId,
+        data: {
+          room_number: room.room_number,
+          room_type_id: roomTypeToId(room.room_type),
+          price_per_night: room.price_per_night,
+          status: statusToId(newStatus),
+        },
+      });
+    }
+  };
+
+  const filteredRooms = rooms.filter((room: Room) => {
     const matchesSearch =
       room.room_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
       room.room_type.toLowerCase().includes(searchTerm.toLowerCase());
@@ -125,70 +262,7 @@ export default function RoomsPage() {
     return matchesSearch && matchesStatus && matchesType;
   });
 
-  const handleAddRoom = () => {
-    const newRoom: Room = {
-      room_id: `R${String(rooms.length + 1).padStart(3, "0")}`,
-      ...formData,
-    };
-    setRooms([...rooms, newRoom]);
-    setFormData({
-      room_number: "",
-      room_type: "single",
-      price_per_night: 0,
-      status: "Available",
-    });
-    setIsAddDialogOpen(false);
-  };
-
-  const handleEditRoom = (room: Room) => {
-    setEditingRoom(room);
-    setFormData({
-      room_number: room.room_number,
-      room_type: room.room_type,
-      price_per_night: room.price_per_night,
-      status: room.status,
-    });
-  };
-
-  const handleUpdateRoom = () => {
-    if (editingRoom) {
-      setRooms(
-        rooms.map((room) =>
-          room.room_id === editingRoom.room_id ? { ...room, ...formData } : room
-        )
-      );
-      setEditingRoom(null);
-      setFormData({
-        room_number: "",
-        room_type: "single",
-        price_per_night: 0,
-        status: "Available",
-      });
-    }
-  };
-
-  const handleDeleteRoom = (roomId: string) => {
-    setRooms(rooms.filter((room) => room.room_id !== roomId));
-  };
-
-  const handleStatusChange = (roomId: string, newStatus: Room["status"]) => {
-    setRooms(
-      rooms.map((room) =>
-        room.room_id === roomId
-          ? {
-              ...room,
-              status: newStatus,
-              ...(newStatus !== "Occupied" && {
-                current_guest: undefined,
-                check_out_date: undefined,
-              }),
-            }
-          : room
-      )
-    );
-  };
-
-  const getStatusColor = (status: Room["status"]) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
       case "Available":
         return "secondary";
@@ -201,7 +275,7 @@ export default function RoomsPage() {
     }
   };
 
-  const getRoomTypeLabel = (type: Room["room_type"]) => {
+  const getRoomTypeLabel = (type: string) => {
     switch (type) {
       case "single":
         return "Single";
@@ -216,18 +290,10 @@ export default function RoomsPage() {
 
   const roomStats = {
     total: rooms.length,
-    available: rooms.filter((r) => r.status === "Available").length,
-    occupied: rooms.filter((r) => r.status === "Occupied").length,
-    maintenance: rooms.filter((r) => r.status === "Maintenance").length,
+    available: rooms.filter((r: Room) => r.status === "Available").length,
+    occupied: rooms.filter((r: Room) => r.status === "Occupied").length,
+    maintenance: rooms.filter((r: Room) => r.status === "Maintenance").length,
   };
-
-  const {
-    data: room,
-    isLoading: isRoomsLoading,
-    isError: isRoomsError,
-  } = useRooms();
-
-  console.log("room", room);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -266,75 +332,113 @@ export default function RoomsPage() {
                     Enter the room details below.
                   </DialogDescription>
                 </DialogHeader>
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="room_number">Room Number</Label>
-                    <Input
-                      id="room_number"
-                      value={formData.room_number}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          room_number: e.target.value,
-                        })
-                      }
-                      placeholder="e.g., 101, 202"
+                <Form {...addForm}>
+                  <form
+                    onSubmit={addForm.handleSubmit(handleAddRoom)}
+                    className="space-y-4"
+                  >
+                    <FormField
+                      control={addForm.control}
+                      name="room_number"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Room Number</FormLabel>
+                          <FormControl>
+                            <Input placeholder="e.g., 101, 202" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
                     />
-                  </div>
-                  <div>
-                    <Label htmlFor="room_type">Room Type</Label>
-                    <Select
-                      value={formData.room_type}
-                      onValueChange={(value: Room["room_type"]) =>
-                        setFormData({ ...formData, room_type: value })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="single">Single</SelectItem>
-                        <SelectItem value="double">Double</SelectItem>
-                        <SelectItem value="suite">Suite</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor="price_per_night">Price per Night ($)</Label>
-                    <Input
-                      id="price_per_night"
-                      type="number"
-                      value={formData.price_per_night}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          price_per_night: Number(e.target.value),
-                        })
-                      }
+
+                    <FormField
+                      control={addForm.control}
+                      name="room_type_id"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Room Type</FormLabel>
+                          <Select
+                            onValueChange={(value) =>
+                              field.onChange(Number(value))
+                            }
+                            value={String(field.value)}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select room type" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="1" defaultValue={"Single"}>
+                                Single
+                              </SelectItem>
+                              <SelectItem value="2">Double</SelectItem>
+                              <SelectItem value="3">Suite</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
                     />
-                  </div>
-                  <div>
-                    <Label htmlFor="status">Status</Label>
-                    <Select
-                      value={formData.status}
-                      onValueChange={(value: Room["status"]) =>
-                        setFormData({ ...formData, status: value })
-                      }
+
+                    <FormField
+                      control={addForm.control}
+                      name="price_per_night"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Price per Night ($)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              placeholder="0"
+                              {...field}
+                              onChange={(e) =>
+                                field.onChange(Number(e.target.value))
+                              }
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={addForm.control}
+                      name="status"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Status</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select status" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="1" defaultValue={"Available"}>
+                                Available
+                              </SelectItem>
+                              <SelectItem value="2">Occupied</SelectItem>
+                              <SelectItem value="3">Maintenance</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <Button
+                      type="submit"
+                      className="w-full"
+                      disabled={createRoomMutation.isPending}
                     >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Available">Available</SelectItem>
-                        <SelectItem value="Occupied">Occupied</SelectItem>
-                        <SelectItem value="Maintenance">Maintenance</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button onClick={handleAddRoom} className="w-full">
-                    Add Room
-                  </Button>
-                </div>
+                      {createRoomMutation.isPending ? "Adding..." : "Add Room"}
+                    </Button>
+                  </form>
+                </Form>
               </DialogContent>
             </Dialog>
           </div>
@@ -422,7 +526,7 @@ export default function RoomsPage() {
         </Card>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-          {filteredRooms.map((room) => (
+          {filteredRooms.map((room: any) => (
             <Card key={room.room_id} className="relative">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
@@ -433,7 +537,7 @@ export default function RoomsPage() {
                     variant={getStatusColor(room.status)}
                     className="text-xs"
                   >
-                    {room.status}
+                    {room.status_label}
                   </Badge>
                 </div>
                 <CardDescription className="text-sm">
@@ -468,7 +572,7 @@ export default function RoomsPage() {
                 <div className="flex flex-col gap-2">
                   <Select
                     value={room.status}
-                    onValueChange={(value: Room["status"]) =>
+                    onValueChange={(value: string) =>
                       handleStatusChange(room.room_id, value)
                     }
                   >
@@ -476,9 +580,9 @@ export default function RoomsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Available">Available</SelectItem>
-                      <SelectItem value="Occupied">Occupied</SelectItem>
-                      <SelectItem value="Maintenance">Maintenance</SelectItem>
+                      <SelectItem value="1">Available</SelectItem>
+                      <SelectItem value="2">Occupied</SelectItem>
+                      <SelectItem value="3">Maintenance</SelectItem>
                     </SelectContent>
                   </Select>
 
@@ -497,6 +601,7 @@ export default function RoomsPage() {
                       size="sm"
                       onClick={() => handleDeleteRoom(room.room_id)}
                       className="flex-1 text-xs"
+                      disabled={deleteRoomMutation.isPending}
                     >
                       <Trash2 className="h-3 w-3 mr-1" />
                       Delete
@@ -517,73 +622,106 @@ export default function RoomsPage() {
                 Update the room details below.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="edit_room_number">Room Number</Label>
-                <Input
-                  id="edit_room_number"
-                  value={formData.room_number}
-                  onChange={(e) =>
-                    setFormData({ ...formData, room_number: e.target.value })
-                  }
+            <Form {...editForm}>
+              <form
+                onSubmit={editForm.handleSubmit(handleUpdateRoom)}
+                className="space-y-4"
+              >
+                <FormField
+                  control={editForm.control}
+                  name="room_number"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Room Number</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-              </div>
-              <div>
-                <Label htmlFor="edit_room_type">Room Type</Label>
-                <Select
-                  value={formData.room_type}
-                  onValueChange={(value: Room["room_type"]) =>
-                    setFormData({ ...formData, room_type: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="single">Single</SelectItem>
-                    <SelectItem value="double">Double</SelectItem>
-                    <SelectItem value="suite">Suite</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="edit_price_per_night">
-                  Price per Night ($)
-                </Label>
-                <Input
-                  id="edit_price_per_night"
-                  type="number"
-                  value={formData.price_per_night}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      price_per_night: Number(e.target.value),
-                    })
-                  }
+
+                <FormField
+                  control={editForm.control}
+                  name="room_type_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Room Type</FormLabel>
+                      <Select
+                        onValueChange={(value) => field.onChange(Number(value))}
+                        value={String(field.value)}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="1">Single</SelectItem>
+                          <SelectItem value="2">Double</SelectItem>
+                          <SelectItem value="3">Suite</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-              </div>
-              <div>
-                <Label htmlFor="edit_status">Status</Label>
-                <Select
-                  value={formData.status}
-                  onValueChange={(value: Room["status"]) =>
-                    setFormData({ ...formData, status: value })
-                  }
+
+                <FormField
+                  control={editForm.control}
+                  name="price_per_night"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Price per Night ($)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          {...field}
+                          onChange={(e) =>
+                            field.onChange(Number(e.target.value))
+                          }
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={editForm.control}
+                  name="status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Status</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="1">Available</SelectItem>
+                          <SelectItem value="2">Occupied</SelectItem>
+                          <SelectItem value="3">Maintenance</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={updateRoomMutation.isPending}
                 >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Available">Available</SelectItem>
-                    <SelectItem value="Occupied">Occupied</SelectItem>
-                    <SelectItem value="Maintenance">Maintenance</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button onClick={handleUpdateRoom} className="w-full">
-                Update Room
-              </Button>
-            </div>
+                  {updateRoomMutation.isPending ? "Updating..." : "Update Room"}
+                </Button>
+              </form>
+            </Form>
           </DialogContent>
         </Dialog>
       </main>
